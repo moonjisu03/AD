@@ -219,3 +219,42 @@ export function summaryCsv(agg, meta) {
   return toCsv(out);
 }
 export { SURVEY_VERSION, BANNERS };
+
+/* ---------- 대시보드 카드용 ---------- */
+export const SECTIONS = [
+  { key: 'screen', label: '기본 질문', test: (id) => /^(Q\d|Q\d_\d)$/.test(id) },
+  { key: 's1', label: '배너 1', test: (id) => id.startsWith('s1_') },
+  { key: 's2', label: '배너 2', test: (id) => id.startsWith('s2_') },
+  { key: 's3', label: '배너 3', test: (id) => id.startsWith('s3_') },
+  { key: 'close', label: '마무리', test: (id) => /^M\d$/.test(id) },
+];
+/* 구간별 응답 시간(문항 응답 시간 합, 다른 앱에 있던 시간 제외) 중앙값(ms). 사진 노출 시간은 포함하지 않는다.
+ * 해당 구간에 시간 기록이 있는 응답만 센다. */
+export function sectionTimes(rows) {
+  return SECTIONS.map((sec) => {
+    const out = { key: sec.key, label: sec.label };
+    COLS.forEach((col) => {
+      const v = rows.filter(col.test).map((r) => Object.entries(r.ms || {}).filter(([k]) => sec.test(k)).reduce((a, [, x]) => a + (typeof x === 'number' ? x : 0), 0)).filter((x) => x > 0);
+      out[col.key] = { median: median(v), n: v.length };
+    });
+    return out;
+  });
+}
+/* 배너별 요약: 평균 확신도(B4_1·B4_2 평균, 1~5)와 ‘유료서비스 광고’ 작은 글씨를 읽었다고 답한 비율(B5 = 1) */
+export function bannerSummary(rows) {
+  const out = [];
+  [1, 2, 3].forEach((b) => {
+    const conf = { key: 'conf' + b, banner: b, kind: 'mean', label: '평균 확신도', unit: '/5' };
+    const read = { key: 'read' + b, banner: b, kind: 'pct', label: '작은 글씨 읽었다고 응답', unit: '%' };
+    COLS.forEach((col) => {
+      const rs = rows.filter(col.test);
+      const cs = [];
+      rs.forEach((r) => { const a = r.ans || {}; [a['s' + b + '_B4_1'], a['s' + b + '_B4_2']].forEach((x) => { if (typeof x === 'number') cs.push(x); }); });
+      conf[col.key] = { value: cs.length ? cs.reduce((x, y) => x + y, 0) / cs.length : null, n: cs.length };
+      const ans = rs.map((r) => (r.ans || {})['s' + b + '_B5']).filter((x) => x !== undefined && x !== null);
+      read[col.key] = { value: ans.length ? (100 * ans.filter((x) => x === 1).length) / ans.length : null, n: ans.length };
+    });
+    out.push(conf, read);
+  });
+  return out;
+}
