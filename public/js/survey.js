@@ -23,13 +23,14 @@ function newId() {
 }
 function shuffle(a) { a = a.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
 
-/* 모집 링크 그룹: ?group=young | ?group=older. 그 밖의 값·누락은 'unknown'으로 기록하고 그대로 진행한다.
+/* 진입 링크는 하나(그룹 값 없음 = 'none'). 연령대는 Q1 답으로만 구분한다.
+ * 예전에 배포한 ?group=young | ?group=older 링크로 들어오면 그 값을 그대로 기록하고, 그 밖의 값은 'unknown'으로 기록한다.
  * 링크 값은 누구나 바꿀 수 있으므로 실제 연령이나 권한으로 쓰지 않는다(실제 연령대는 Q1 답). */
 function readLinkGroup() {
   var raw = '';
   try { raw = new URLSearchParams(location.search).get('group') || ''; } catch (e) {}
   raw = raw.slice(0, 40);
-  var g = raw === 'young' || raw === 'older' ? raw : 'unknown';
+  var g = raw === '' ? 'none' : (raw === 'young' || raw === 'older' ? raw : 'unknown');
   return { linkGroup: g, linkGroupRaw: raw };
 }
 
@@ -73,7 +74,7 @@ function logEvent(type, extra) {
 
 /* ---------- 저장 ---------- */
 function ageMismatch() {
-  if (S.linkGroup === 'unknown' || !S.group) return false;
+  if ((S.linkGroup !== 'young' && S.linkGroup !== 'older') || !S.group) return false;
   return !((S.linkGroup === 'young' && S.group === '20-30') || (S.linkGroup === 'older' && S.group === '50-60'));
 }
 function snapshot() {

@@ -48,7 +48,7 @@ service cloud.firestore {
         && str(d.get('endReason', ''), 60)
         && d.test is bool
         && d.consent == true
-        && d.linkGroup in ['young', 'older', 'unknown']
+        && d.linkGroup in ['none', 'young', 'older', 'unknown']
         && str(d.get('linkGroupRaw', ''), 40)
         && d.ageGroup in ['', '20-30', '50-60']
         && d.get('groupMismatch', false) is bool

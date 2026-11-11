@@ -14,7 +14,7 @@ const OTHER = 'resp-1111-bbbb';
 function base(uid, over = {}) {
   return {
     id: RID, uid, surveyVersion: '2026-11-v1', rev: 1, status: 'in_progress', endReason: '', test: false, consent: true,
-    linkGroup: 'young', linkGroupRaw: 'young', ageGroup: '', groupMismatch: false, cond: false, order: [1, 2, 3], orderSrc: 'random',
+    linkGroup: 'none', linkGroupRaw: '', ageGroup: '', groupMismatch: false, cond: false, order: [1, 2, 3], orderSrc: 'random',
     expSec: 10, vw: 390, vh: 844, openedAt: '2026-11-11T00:00:00.000Z', startedAt: '2026-11-11T00:00:01.000Z',
     updatedAt: '2026-11-11T00:00:02.000Z', finishedAt: '', ans: { consent: 1 }, ms: {}, optOrder: {},
     exposures: [], restarts: {}, events: [],
@@ -71,6 +71,12 @@ test('참여자: 다른 uid를 소유자로 넣어 생성 거부(소유자 위�
 });
 test('참여자: 문서 ID와 id 필드 불일치 거부', async () => {
   await assertFails(setDoc(doc(alice(), 'responses', 'resp-zzzz-zzzz'), base('alice')));
+});
+test('참여자: 공통 링크(none)와 예전 링크(young·older)·잘못된 값(unknown) 생성 허용', async () => {
+  for (const g of ['none', 'young', 'older', 'unknown']) {
+    await env.clearFirestore();
+    await aliceCreates({ linkGroup: g, linkGroupRaw: g === 'none' ? '' : g });
+  }
 });
 test('참여자: 동의 없이 생성 거부', async () => {
   await assertFails(setDoc(doc(alice(), 'responses', RID), base('alice', { consent: false })));
