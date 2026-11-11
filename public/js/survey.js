@@ -253,13 +253,16 @@ function renderExposure(st) {
     main.innerHTML = '<p class="note warn">사진을 불러오지 못했습니다. 인터넷 연결을 확인하고 다시 시도해 주세요.</p><button class="btn" type="button" id="expretry" style="width:100%">다시 시도</button>';
     $('#expretry').addEventListener('click', function () { renderExposure(st); });
   }
+  var started = false, begun = false;
   function start() {
-    if (expRun !== run) return;
+    if (started || expRun !== run) return;
+    started = true;
     clearTimeout(failT);
     img.style.visibility = 'visible';
-    requestAnimationFrame(function () {
-      if (expRun !== run) return;
-      run.t0 = performance.now(); rec.imgWaitMs = Math.round(run.t0 - w0); rec.outcome = 'showing';
+    /* 그려진 뒤 시작: requestAnimationFrame, 일부 환경에서 멈추면 200ms 뒤 시작 */
+    var begin = function () {
+      if (begun || expRun !== run) return; begun = true;
+      run.t0 = performance.now(); rec.imgWaitMs = Math.round(run.t0 - w0); rec.outcome = 'showing'; rec.shownAt = new Date().toISOString(); persistLocal();
       $('#exphint').textContent = '곧 사진이 사라집니다';
       tm = setInterval(function () {
         var left = Math.max(0, dur - (performance.now() - run.t0));
@@ -270,13 +273,14 @@ function renderExposure(st) {
           go(nextIdx(S.i)); save();
         }
       }, 100);
-    });
+    };
+    requestAnimationFrame(begin); setTimeout(begin, 200);
   }
+  /* 이미지가 실제로 불러와진 뒤 시작(onload 또는 decode 중 먼저 끝난 쪽) */
   img.onerror = fail;
+  img.onload = function () { if (img.naturalWidth) start(); else fail(); };
   img.src = imgSrc(B.img);
-  (img.decode ? img.decode() : new Promise(function (r, j) { img.onload = r; img.onerror = j; })).then(start, function () {
-    if (img.complete && img.naturalWidth) start(); else fail();
-  });
+  if (img.decode) img.decode().then(start, function () {});
 }
 function stopTimer() { if (tm) { clearInterval(tm); tm = null; } }
 /* 노출을 중간에 끊고 안내 화면으로 되돌린다(다른 앱 이동, 새로고침). 다시 보면 반복 노출로 기록된다. */
@@ -474,12 +478,10 @@ document.addEventListener('visibilitychange', function () {
   if (!S || final()) return;
   if (document.hidden) {
     /* 화면을 떠날 때 예약된 중간 저장을 바로 보낸다. */
+    /* 노출 중 화면을 떠나면 그 순간 타이머를 멈추고 실제 표시 시간을 기록한다. 돌아오면 안내 화면부터 다시 보여 준다. */
+    if (expRun && interruptExposure('hidden', '다른 앱으로 나가서 처음부터 사진을 다시 보여 드립니다.')) { render(); save(true); return; }
     if (saveT) save(true);
-    if (expRun) logEvent('hidden_during_exposure');
-    return;
   }
-  if (!expRun) return;
-  if (interruptExposure('hidden', '다른 앱으로 나가서 처음부터 사진을 다시 보여 드립니다.')) { save(); render(); }
 });
 window.addEventListener('pagehide', function () {
   if (!S || final()) return;
