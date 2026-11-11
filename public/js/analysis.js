@@ -3,7 +3,7 @@ import { BANNERS, buildFlow, SURVEY_VERSION } from './questions.js';
 
 export const STATUS_LABEL = { in_progress: '진행 중', complete: '완료', screened_out: '선별 탈락', quit: '중단(그만하기)' };
 export const AGE_LABEL = { '20-30': '20~30대', '50-60': '50~60대', '': '연령 미응답·대상 외' };
-export const LINK_LABEL = { young: '20~30대 링크(young)', older: '50~60대 링크(older)', unknown: '링크 그룹 없음·잘못된 값' };
+export const LINK_LABEL = { none: '공통 링크', young: '예전 20~30대 링크(young)', older: '예전 50~60대 링크(older)', unknown: '잘못된 group 값' };
 export const END_LABEL = { age: '나이(40대·70대 이상)', phone: '스마트폰 거의 안 씀', 'no-experience': '광고 클릭 경험 없음·기억 안 남(50~60대)' };
 export const BANNER_NAME = { 1: '배너 1 (보험 환급금 조회)', 2: '배너 2 (빨간 ! 보호 안내)', 3: '배너 3 (화살표·확인하기)' };
 /* 측정한 내용에 맞춘 이름. 시선 추적 자료가 아니다. */
@@ -87,7 +87,7 @@ export function statusSummary(rows, now) {
 }
 
 export function linkTable(rows) {
-  return ['young', 'older', 'unknown'].map((g) => {
+  return ['none', 'young', 'older', 'unknown'].map((g) => {
     const rs = rows.filter((r) => (r.linkGroup || 'unknown') === g);
     const c = (fn) => rs.filter(fn).length;
     return {
