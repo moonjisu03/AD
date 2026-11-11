@@ -81,18 +81,20 @@ function draw() {
   const scope = filterRows(ROWS, F, { ignoreStatus: true });
   const rows = filterRows(ROWS, F);
   const s = statusSummary(scope, now);
+  /* 진입 링크는 하나다. 예전 연령대별 링크·잘못된 값으로 들어온 응답이 있을 때만 링크 관련 표를 보여 준다. */
+  const legacy = scope.some((r) => (r.linkGroup || 'unknown') !== 'none');
   let h = '<h2>참여 현황</h2><p class="mut small">테스트·버전·링크 필터 적용, 진행 상태는 전체. ‘진행 중’은 마지막 저장 후 2시간 이내, 그보다 오래된 진행 중 응답은 ‘이탈 추정’으로 따로 셉니다.</p><div class="kpis">' +
     kpi(s.started, '시작(동의 후 저장된 응답)') + kpi(s.complete, '완료') + kpi(s.complete20, '완료 · 20~30대') + kpi(s.complete50, '완료 · 50~60대') +
     kpi(s.inProgress, '진행 중') + kpi(s.stale, '이탈 추정(진행 중, 2시간+)') + kpi(s.quit, '중단(그만하기)') + kpi(s.screened, '선별 탈락') +
-    kpi(s.mismatch, '링크 그룹 ≠ 응답 연령대') + kpi(s.repeated, '사진 반복 노출 있음') + '</div>';
+    (legacy ? kpi(s.mismatch, '예전 링크 그룹 ≠ 응답 연령대') : '') + kpi(s.repeated, '사진 반복 노출 있음') + '</div>';
   const rk = Object.keys(s.reasons);
   if (rk.length) {
     h += '<div class="tw" style="margin-top:10px"><table><tr><th>선별 탈락 사유</th><th class="n">수</th></tr>' +
       rk.map((k) => `<tr><td>${esc(END_LABEL[k] || k)}</td><td class="n">${s.reasons[k]}</td></tr>`).join('') + '</table></div>';
   }
 
-  h += '<h2>모집 링크별 현황</h2><p class="mut small">링크 그룹은 URL 값일 뿐 실제 나이를 보장하지 않습니다. 실제 연령대는 Q1 응답 기준입니다.</p><div class="tw"><table><tr><th>모집 링크</th><th class="n">시작</th><th class="n">완료</th><th class="n">완료·20~30대</th><th class="n">완료·50~60대</th><th class="n">연령 불일치</th><th class="n">선별 탈락</th><th class="n">중단</th><th class="n">진행 중</th></tr>' +
-    linkTable(scope).map((r) => `<tr><td>${esc(LINK_LABEL[r.group])}</td><td class="n">${r.started}</td><td class="n">${r.complete}</td><td class="n">${r.complete20}</td><td class="n">${r.complete50}</td><td class="n">${r.mismatch}</td><td class="n">${r.screened}</td><td class="n">${r.quit}</td><td class="n">${r.inProgress}</td></tr>`).join('') +
+  if (legacy) h += '<h2>진입 링크별 현황</h2><p class="mut small">지금은 공통 링크 하나로 받습니다. 예전 연령대별 링크(?group=young·older)로 들어온 응답이 있어 함께 표시합니다. 연령대는 링크가 아니라 Q1 응답 기준입니다.</p><div class="tw"><table><tr><th>진입 링크</th><th class="n">시작</th><th class="n">완료</th><th class="n">완료·20~30대</th><th class="n">완료·50~60대</th><th class="n">연령 불일치</th><th class="n">선별 탈락</th><th class="n">중단</th><th class="n">진행 중</th></tr>' +
+    linkTable(scope).filter((r) => r.started > 0).map((r) => `<tr><td>${esc(LINK_LABEL[r.group])}</td><td class="n">${r.started}</td><td class="n">${r.complete}</td><td class="n">${r.complete20}</td><td class="n">${r.complete50}</td><td class="n">${r.mismatch}</td><td class="n">${r.screened}</td><td class="n">${r.quit}</td><td class="n">${r.inProgress}</td></tr>`).join('') +
     '</table></div>';
 
   h += drawQuestions(rows);
@@ -144,7 +146,7 @@ function drawQuestions(rows) {
 function fmtDate(v) { const t = tsMs(v); return t === null ? '' : new Date(t).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }); }
 function drawList(rows) {
   const sorted = rows.slice().sort((a, b) => (tsMs(b.serverCreatedAt) || 0) - (tsMs(a.serverCreatedAt) || 0));
-  return '<h2>응답 조회</h2><div class="tw"><table><tr><th>응답</th><th>상태</th><th>모집 링크</th><th>응답 연령대</th><th>버전</th><th>시작</th><th>종료</th><th class="n">소요</th><th>표시</th></tr>' +
+  return '<h2>응답 조회</h2><div class="tw"><table><tr><th>응답</th><th>상태</th><th>진입 링크</th><th>응답 연령대</th><th>버전</th><th>시작</th><th>종료</th><th class="n">소요</th><th>표시</th></tr>' +
     sorted.map((r) => {
       const dur = tsMs(r.finishedAt) && tsMs(r.startedAt) ? Math.round((tsMs(r.finishedAt) - tsMs(r.startedAt)) / 60000) + '분' : '';
       const flags = [r.test ? '<span class="pill">테스트</span>' : '', r.groupMismatch ? '<span class="pill bad">연령 불일치</span>' : '',
@@ -165,7 +167,7 @@ function detail(id) {
     return Array.isArray(v) ? v.map(one).join(', ') : one(v);
   };
   let h = `<h1>응답 ${esc(String(r.id).slice(0, 8))}</h1><p class="mut small">${esc(r.id)}<br>상태: ${esc(STATUS_LABEL[r.status] || r.status)}${r.endReason ? ' (' + esc(r.endReason) + ')' : ''} · 테스트: ${r.test ? '예' : '아니오'} · 버전 ${esc(r.surveyVersion)}<br>` +
-    `모집 링크: ${esc(r.linkGroup)}${r.linkGroupRaw && r.linkGroupRaw !== r.linkGroup ? ' (원래 값 “' + esc(r.linkGroupRaw) + '”)' : ''} · 응답 연령대: ${esc(AGE_LABEL[r.ageGroup || ''])}${r.groupMismatch ? ' · <b>링크와 불일치</b>' : ''}<br>` +
+    `진입 링크: ${esc(LINK_LABEL[r.linkGroup] || r.linkGroup)}${r.linkGroupRaw && r.linkGroupRaw !== r.linkGroup ? ' (원래 값 “' + esc(r.linkGroupRaw) + '”)' : ''} · 응답 연령대: ${esc(AGE_LABEL[r.ageGroup || ''])}${r.groupMismatch ? ' · <b>링크와 불일치</b>' : ''}<br>` +
     `배너 순서: ${esc((r.order || []).join(' → '))} · 노출 설정 ${esc(r.expSec)}초</p>`;
   const ex = r.exposures || [];
   if (ex.length) {
