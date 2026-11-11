@@ -1,0 +1,112 @@
+rules_version = '2';
+
+// 광고 해석 설문 Firestore 보안 규칙
+// - 비로그인: 접근 불가
+// - 참여자(익명 인증): 자기 응답 문서 1개를 만들고, 진행 중일 때만 고치고, 자기 문서만 읽는다
+// - 관리자: admins/{uid} 문서가 있는 계정만 전체 응답을 읽는다(쓰기 없음)
+// - admins 컬렉션은 콘솔(또는 서버 관리자 권한)에서만 만든다. 앱에서는 누구도 쓸 수 없다.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isAdmin() {
+      return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+    function str(v, max) { return v is string && v.size() <= max; }
+    function finalStatus(s) { return s in ['complete', 'screened_out', 'quit']; }
+    function textOk(a, k, max) { return !(k in a) || str(a[k], max); }
+    // 자유 입력 칸의 길이 제한(화면 입력 제한과 같다: 기타 80자, 마지막 의견 600자)
+    function textsOk(a) {
+      return textOk(a, 'M6', 600) &&
+        textOk(a, 'Q3_1_text', 80) &&
+        textOk(a, 'Q3_2_text', 80) &&
+        textOk(a, 'Q3_3_text', 80) &&
+        textOk(a, 'M2_text', 80) &&
+        textOk(a, 'M5_text', 80) &&
+        textOk(a, 's1_A2_text', 80) &&
+        textOk(a, 's1_B3_1_text', 80) &&
+        textOk(a, 's1_B3_2_text', 80) &&
+        textOk(a, 's2_A2_text', 80) &&
+        textOk(a, 's2_B3_1_text', 80) &&
+        textOk(a, 's2_B3_2_text', 80) &&
+        textOk(a, 's3_A2_text', 80) &&
+        textOk(a, 's3_B3_1_text', 80) &&
+        textOk(a, 's3_B3_2_text', 80);
+    }
+
+    function validResponse(d) {
+      return d.keys().hasOnly(['id', 'uid', 'surveyVersion', 'rev', 'status', 'endReason', 'test', 'consent',
+          'linkGroup', 'linkGroupRaw', 'ageGroup', 'groupMismatch', 'cond', 'order', 'orderSrc', 'expSec',
+          'vw', 'vh', 'openedAt', 'startedAt', 'updatedAt', 'finishedAt', 'ans', 'ms', 'optOrder',
+          'exposures', 'restarts', 'events', 'serverCreatedAt', 'serverUpdatedAt'])
+        && d.keys().hasAll(['id', 'uid', 'surveyVersion', 'rev', 'status', 'test', 'consent', 'linkGroup',
+          'ageGroup', 'order', 'expSec', 'ans', 'serverCreatedAt', 'serverUpdatedAt'])
+        && str(d.id, 64) && d.id.size() >= 8
+        && str(d.surveyVersion, 20)
+        && d.rev is int && d.rev >= 1
+        && d.status in ['in_progress', 'complete', 'screened_out', 'quit']
+        && str(d.get('endReason', ''), 60)
+        && d.test is bool
+        && d.consent == true
+        && d.linkGroup in ['young', 'older', 'unknown']
+        && str(d.get('linkGroupRaw', ''), 40)
+        && d.ageGroup in ['', '20-30', '50-60']
+        && d.get('groupMismatch', false) is bool
+        && d.get('cond', false) is bool
+        && d.order is list && d.order.size() == 3
+        && d.get('orderSrc', 'random') in ['link', 'random']
+        && d.expSec is int && d.expSec >= 1 && d.expSec <= 60
+        && d.get('vw', 0) is number && d.get('vh', 0) is number
+        && str(d.get('openedAt', ''), 40) && str(d.get('startedAt', ''), 40)
+        && str(d.get('updatedAt', ''), 40) && str(d.get('finishedAt', ''), 40)
+        && (!finalStatus(d.status) || d.get('finishedAt', '').size() > 0)
+        && d.ans is map && d.ans.size() <= 150 && textsOk(d.ans)
+        && d.get('ms', {}) is map && d.get('ms', {}).size() <= 150
+        && d.get('optOrder', {}) is map && d.get('optOrder', {}).size() <= 60
+        && d.get('exposures', []) is list && d.get('exposures', []).size() <= 60
+        && d.get('restarts', {}) is map && d.get('restarts', {}).size() <= 3
+        && d.get('events', []) is list && d.get('events', []).size() <= 100
+        && d.serverUpdatedAt == request.time;
+    }
+
+    match /responses/{rid} {
+      // 없는 문서 조회는 허용(처음 저장할 때 존재 여부 확인용). 남의 문서는 읽을 수 없다.
+      allow get: if isAdmin()
+        || (signedIn() && (resource == null || resource.data.uid == request.auth.uid));
+      // 전체 목록 조회는 관리자만
+      allow list: if isAdmin();
+
+      allow create: if signedIn()
+        && validResponse(request.resource.data)
+        && request.resource.data.id == rid
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.serverCreatedAt == request.time;
+
+      // 진행 중인 자기 응답만 수정. 종료(완료·선별 탈락·그만하기) 뒤에는 수정 불가.
+      // 소유자·응답 ID·설문 버전·모집 링크·배너 순서 등은 바꿀 수 없다. rev는 늘어나야 한다(늦게 도착한 이전 저장 차단).
+      allow update: if signedIn()
+        && resource.data.uid == request.auth.uid
+        && resource.data.status == 'in_progress'
+        && validResponse(request.resource.data)
+        && request.resource.data.diff(resource.data).unchangedKeys().hasAll(['id', 'uid', 'surveyVersion',
+            'serverCreatedAt', 'test', 'linkGroup', 'order', 'expSec'])
+        && request.resource.data.get('linkGroupRaw', '') == resource.data.get('linkGroupRaw', '')
+        && request.resource.data.get('orderSrc', '') == resource.data.get('orderSrc', '')
+        && request.resource.data.get('openedAt', '') == resource.data.get('openedAt', '')
+        && request.resource.data.rev > resource.data.rev;
+
+      allow delete: if false;
+    }
+
+    match /admins/{uid} {
+      // 자기 관리자 여부만 확인 가능. 앱에서 관리자 등록·변경은 불가.
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list, create, update, delete: if false;
+    }
+
+    // 그 밖의 모든 경로는 거부
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

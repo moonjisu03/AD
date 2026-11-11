@@ -1,0 +1,16 @@
+node_modules/
+.firebase/
+.firebaserc
+*-debug.log
+firebase-debug.*.log
+ui-debug.log
+.env
+.env.*
+!.env.example
+# 서비스 계정 키·내보낸 결과·응답 자료는 올리지 않는다
+*serviceAccount*.json
+*-adminsdk-*.json
+exports/
+*.csv
+.emulator-data/
+.DS_Store
