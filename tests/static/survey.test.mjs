@@ -104,3 +104,20 @@ test('원자료 CSV: 자유 입력 수식 무력화, 보기 문구 열 포함', 
   assert.ok(csv.includes('20대'));
   assert.ok(catalog().some((q) => q.id === 's3_B4_2'));
 });
+
+test('대시보드: 구간별 응답 시간 중앙값과 배너별 확신도·작은 글씨 비율', async () => {
+  const { sectionTimes, bannerSummary } = await import('../../public/js/analysis.js');
+  const rows = [
+    row({ ageGroup: '20-30', ms: { Q1: 1000, Q2: 1000, s1_A1: 3000, M1: 2000 }, ans: { s1_B4_1: 4, s1_B4_2: 2, s1_B5: 1 } }),
+    row({ ageGroup: '50-60', ms: { Q1: 4000, s1_B1: 9000 }, ans: { s1_B4_1: 5, s1_B5: 3 } }),
+  ];
+  const t = sectionTimes(rows);
+  assert.equal(t.find((x) => x.key === 'screen')['20-30'].median, 2000);
+  assert.equal(t.find((x) => x.key === 's1')['50-60'].median, 9000);
+  assert.equal(t.find((x) => x.key === 's1').all.median, 6000);
+  assert.equal(t.find((x) => x.key === 's2').all.n, 0);
+  const b = bannerSummary(rows);
+  assert.equal(b.find((x) => x.key === 'conf1').all.value, 11 / 3);
+  assert.equal(b.find((x) => x.key === 'read1').all.value, 50);
+  assert.equal(b.find((x) => x.key === 'read1')['50-60'].value, 0);
+});
