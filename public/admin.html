@@ -10,58 +10,70 @@
 <link rel="stylesheet" href="/css/admin.css">
 </head>
 <body>
-<header class="hd">
-  <div class="wrap hd-in">
-    <b>광고 해석 설문 · 관리자</b>
-    <span id="env" class="tag" hidden></span>
-    <span class="sp"></span>
-    <span id="who" class="mut"></span>
-    <button id="logout" type="button" class="lnk" hidden>로그아웃</button>
-  </div>
+<header class="topbar">
+  <div class="brand"><span class="logo" aria-hidden="true">AD</span><span>광고 해석 설문</span></div>
+  <span id="env" class="tag" hidden></span>
+  <span class="sp"></span>
+  <span class="topnav">관리자</span>
+  <span id="who" class="who"></span>
+  <button id="logout" type="button" class="lnk" hidden>로그아웃</button>
 </header>
 
-<main class="wrap">
-  <section id="login" class="card narrow" hidden>
-    <h1>관리자 로그인</h1>
-    <p class="mut">Firebase Authentication에 등록하고 관리자로 지정한 계정만 응답을 볼 수 있습니다.</p>
-    <form id="lf">
-      <label>이메일<input id="em" type="email" autocomplete="username" required></label>
-      <label>비밀번호<input id="pw" type="password" autocomplete="current-password" required></label>
-      <button class="btn" type="submit">로그인</button>
-      <p id="lerr" class="err" role="alert"></p>
-    </form>
-  </section>
-
-  <section id="denied" class="card narrow" hidden>
-    <h1>관리자 권한이 없습니다</h1>
-    <p>이 계정(<span id="duid"></span>)은 관리자로 지정되어 있지 않습니다. README의 ‘관리자 계정 등록’을 따라 Firestore <code>admins/{uid}</code> 문서를 만든 뒤 다시 로그인하세요.</p>
-  </section>
-
-  <section id="app" hidden>
-    <div class="bar">
-      <button id="reload" class="btn sm" type="button">응답 불러오기</button>
-      <span id="loaded" class="mut"></span>
-      <span class="sp"></span>
-      <button id="dlraw" class="btn sm ghost" type="button" disabled>원자료 CSV</button>
-      <button id="dlsum" class="btn sm ghost" type="button" disabled>집계 CSV</button>
+<div class="shell">
+  <nav class="side" id="side" aria-label="관리자 메뉴" hidden>
+    <a href="#sec-dash" class="nav on" data-nav="sec-dash">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-5v-5h-4v5H5a1 1 0 0 1-1-1z"/></svg>대시보드</a>
+    <a href="#sec-q" class="nav" data-nav="sec-q">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h6v6H5zM13 5h6v6h-6zM5 13h6v6H5zM13 13h6v6h-6z"/></svg>문항별 응답</a>
+    <a href="#sec-list" class="nav" data-nav="sec-list">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h14"/></svg>응답 조회</a>
+    <div class="side-sub">
+      <span class="side-h">내려받기</span>
+      <button id="dlraw" type="button" class="nav sub" disabled>원자료 CSV</button>
+      <button id="dlsum" type="button" class="nav sub" disabled>집계 CSV</button>
     </div>
+  </nav>
 
-    <div class="filters card">
-      <label>테스트 응답
-        <select id="f-test"><option value="exclude">제외</option><option value="include">포함</option><option value="only">테스트만</option></select></label>
-      <label>진행 상태(문항 집계·응답 목록)
-        <select id="f-status"><option value="complete">완료</option><option value="all">전체</option><option value="in_progress">진행 중</option><option value="screened_out">선별 탈락</option><option value="quit">중단</option></select></label>
-      <label>설문 버전
-        <select id="f-version"><option value="all">전체</option></select></label>
-      <label>모집 링크
-        <select id="f-link"><option value="all">전체</option><option value="none">공통 링크</option><option value="young">예전 young</option><option value="older">예전 older</option><option value="unknown">잘못된 값</option></select></label>
-      <p class="mut small">기본 분석은 <b>테스트 제외 · 완료 응답</b>입니다. 현황 표는 진행 상태 필터와 관계없이 테스트·버전·링크 필터만 적용합니다.</p>
-    </div>
+  <main class="main">
+    <section id="login" class="card narrow" hidden>
+      <h1>관리자 로그인</h1>
+      <p class="mut">Firebase Authentication에 등록하고 관리자로 지정한 계정만 응답을 볼 수 있습니다.</p>
+      <form id="lf">
+        <label>이메일<input id="em" type="email" autocomplete="username" required></label>
+        <label>비밀번호<input id="pw" type="password" autocomplete="current-password" required></label>
+        <button class="btn" type="submit">로그인</button>
+        <p id="lerr" class="err" role="alert"></p>
+      </form>
+    </section>
 
-    <div id="out"></div>
-  </section>
-</main>
+    <section id="denied" class="card narrow" hidden>
+      <h1>관리자 권한이 없습니다</h1>
+      <p>이 계정(<span id="duid"></span>)은 관리자로 지정되어 있지 않습니다. README의 ‘관리자 계정 등록’을 따라 Firestore <code>admins/{uid}</code> 문서를 만든 뒤 다시 로그인하세요.</p>
+    </section>
 
+    <section id="app" hidden>
+      <div class="card" id="sec-dash">
+        <div class="card-h"><h2>참여 현황</h2><span class="mut small" id="loaded">아직 불러오지 않았습니다</span></div>
+        <div class="filters">
+          <label><span>테스트 응답</span>
+            <select id="f-test"><option value="exclude">제외</option><option value="include">포함</option><option value="only">테스트만</option></select></label>
+          <label><span>진행 상태</span>
+            <select id="f-status"><option value="complete">완료</option><option value="all">전체</option><option value="in_progress">진행 중</option><option value="screened_out">선별 탈락</option><option value="quit">중단</option></select></label>
+          <label><span>설문 버전</span>
+            <select id="f-version"><option value="all">전체</option></select></label>
+          <label><span>진입 링크</span>
+            <select id="f-link"><option value="all">전체</option><option value="none">공통 링크</option><option value="young">예전 young</option><option value="older">예전 older</option><option value="unknown">잘못된 값</option></select></label>
+          <span class="sp"></span>
+          <button id="reload" class="btn" type="button">응답 불러오기</button>
+        </div>
+        <div id="flow"></div>
+      </div>
+      <div id="out"></div>
+    </section>
+  </main>
+</div>
+
+<div id="tip" class="tip" role="tooltip" hidden></div>
 <dialog id="dlg"><div id="dlgbody"></div><form method="dialog"><button class="btn sm">닫기</button></form></dialog>
 <script type="module" src="/js/admin.js"></script>
 </body>
