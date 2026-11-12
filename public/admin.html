@@ -21,11 +21,11 @@
 
 <div class="shell">
   <nav class="side" id="side" aria-label="관리자 메뉴" hidden>
-    <a href="#sec-dash" class="nav on" data-nav="sec-dash">
+    <a href="#/dashboard" class="nav on" data-view="dash">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-5v-5h-4v5H5a1 1 0 0 1-1-1z"/></svg>대시보드</a>
-    <a href="#sec-q" class="nav" data-nav="sec-q">
+    <a href="#/questions" class="nav" data-view="q">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h6v6H5zM13 5h6v6h-6zM5 13h6v6H5zM13 13h6v6h-6z"/></svg>문항별 응답</a>
-    <a href="#sec-list" class="nav" data-nav="sec-list">
+    <a href="#/responses" class="nav" data-view="list">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h14"/></svg>응답 조회</a>
     <div class="side-sub">
       <span class="side-h">내려받기</span>
@@ -52,23 +52,24 @@
     </section>
 
     <section id="app" hidden>
-      <div class="card" id="sec-dash">
-        <div class="card-h"><h2>참여 현황</h2><span class="mut small" id="loaded">아직 불러오지 않았습니다</span></div>
+      <div class="card toolbar">
         <div class="filters">
           <label><span>테스트 응답</span>
             <select id="f-test"><option value="exclude">제외</option><option value="include">포함</option><option value="only">테스트만</option></select></label>
           <label><span>진행 상태</span>
-            <select id="f-status"><option value="complete">완료</option><option value="all">전체</option><option value="in_progress">진행 중</option><option value="screened_out">선별 탈락</option><option value="quit">중단</option></select></label>
+            <select id="f-status"><option value="complete">완료</option><option value="all">전체</option><option value="in_progress">진행 중</option><option value="stale">이탈 추정</option><option value="quit">중단</option><option value="screened_out">선별 탈락</option></select></label>
           <label><span>설문 버전</span>
             <select id="f-version"><option value="all">전체</option></select></label>
           <label><span>진입 링크</span>
             <select id="f-link"><option value="all">전체</option><option value="none">공통 링크</option><option value="young">예전 young</option><option value="older">예전 older</option><option value="unknown">잘못된 값</option></select></label>
           <span class="sp"></span>
+          <span class="mut small" id="loaded">아직 불러오지 않았습니다</span>
           <button id="reload" class="btn" type="button">응답 불러오기</button>
         </div>
-        <div id="flow"></div>
       </div>
-      <div id="out"></div>
+      <div id="view-dash" class="view"></div>
+      <div id="view-q" class="view" hidden></div>
+      <div id="view-list" class="view" hidden></div>
     </section>
   </main>
 </div>

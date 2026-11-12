@@ -121,3 +121,20 @@ test('대시보드: 구간별 응답 시간 중앙값과 배너별 확신도·�
   assert.equal(b.find((x) => x.key === 'read1').all.value, 50);
   assert.equal(b.find((x) => x.key === 'read1')['50-60'].value, 0);
 });
+
+test('이탈 추정: 진행 중이고 마지막 저장 후 5시간 넘으면 stale, 필터로 따로 셈', async () => {
+  const { viewStatus, filterRows, statusSummary } = await import('../../public/js/analysis.js');
+  const now = Date.parse('2026-11-12T12:00:00Z');
+  const at = (h) => ({ seconds: (now - h * 3600e3) / 1000 });
+  const rows = [
+    row({ status: 'in_progress', serverUpdatedAt: at(4.9) }),
+    row({ status: 'in_progress', serverUpdatedAt: at(5.1) }),
+    row({ status: 'quit', serverUpdatedAt: at(10) }),
+    row({ status: 'complete', serverUpdatedAt: at(10) }),
+  ];
+  assert.deepEqual(rows.map((r) => viewStatus(r, now)), ['in_progress', 'stale', 'quit', 'complete']);
+  assert.equal(filterRows(rows, { ...DEFAULT_FILTER, status: 'stale' }, { now }).length, 1);
+  assert.equal(filterRows(rows, { ...DEFAULT_FILTER, status: 'in_progress' }, { now }).length, 1);
+  const s = statusSummary(rows, now);
+  assert.equal(s.stale, 1); assert.equal(s.inProgress, 1); assert.equal(s.quit, 1);
+});

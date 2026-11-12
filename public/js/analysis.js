@@ -1,7 +1,7 @@
 /* 관리자 화면용 집계·CSV. DOM·Firebase에 의존하지 않는 순수 함수(테스트 가능). */
 import { BANNERS, buildFlow, SURVEY_VERSION } from './questions.js';
 
-export const STATUS_LABEL = { in_progress: '진행 중', complete: '완료', screened_out: '선별 탈락', quit: '중단(그만하기)' };
+export const STATUS_LABEL = { in_progress: '진행 중', stale: '이탈 추정', complete: '완료', screened_out: '선별 탈락', quit: '중단(그만하기)' };
 export const AGE_LABEL = { '20-30': '20~30대', '50-60': '50~60대', '': '연령 미응답·대상 외' };
 export const LINK_LABEL = { none: '공통 링크', young: '예전 20~30대 링크(young)', older: '예전 50~60대 링크(older)', unknown: '잘못된 group 값' };
 export const END_LABEL = { age: '나이(40대·70대 이상)', phone: '스마트폰 거의 안 씀', 'no-experience': '광고 클릭 경험 없음·기억 안 남(50~60대)' };
@@ -11,7 +11,8 @@ export const SHORT_LABEL = {
   A1: '먼저 눈에 들어왔다고 응답한 항목(최대 2개)', A2: '서비스 성격 인식(사진 가린 뒤)', A3: '버튼 결과 예상(사진 가린 뒤)',
   A4: '광고/안내 인식(사진 가린 뒤)', B1: '비용 인식', B2: '버튼 누르면 바로 가입 예상', B5: '‘유료서비스 광고’ 작은 글씨 읽음',
 };
-export const STALE_MS = 2 * 60 * 60 * 1000;
+/* 이탈 추정: 진행 중인데 마지막 저장 후 5시간 넘게 다시 접속(저장)하지 않은 응답 */
+export const STALE_MS = 5 * 60 * 60 * 1000;
 
 /* 문항 목록: 배너 순서 [1,2,3] 기준으로 모든 문항을 펼친다. */
 const DUMMY = { ans: {}, group: '', cond: false };
@@ -52,7 +53,9 @@ export function isStale(r, now) {
   return r.status === 'in_progress' && t !== null && now - t > STALE_MS;
 }
 
-/* 필터: test = 'exclude' | 'include' | 'only', status = 'complete' | 'all' | 상태값, version = 'all' | 버전, link = 'all' | 그룹 */
+/* 화면에 쓰는 상태: 진행 중이지만 5시간 넘게 저장이 없으면 'stale'(이탈 추정). DB 값은 바꾸지 않는다. */
+export function viewStatus(r, now = Date.now()) { return isStale(r, now) ? 'stale' : r.status; }
+/* 필터: test = 'exclude' | 'include' | 'only', status = 'complete' | 'all' | 화면 상태값(stale 포함), version = 'all' | 버전, link = 'all' | 그룹 */
 export const DEFAULT_FILTER = { test: 'exclude', status: 'complete', version: 'all', link: 'all' };
 export function filterRows(rows, f, opts = {}) {
   return rows.filter((r) => {
@@ -60,7 +63,7 @@ export function filterRows(rows, f, opts = {}) {
     if (f.test === 'only' && !r.test) return false;
     if (f.version !== 'all' && r.surveyVersion !== f.version) return false;
     if (f.link !== 'all' && r.linkGroup !== f.link) return false;
-    if (!opts.ignoreStatus && f.status !== 'all' && r.status !== f.status) return false;
+    if (!opts.ignoreStatus && f.status !== 'all' && viewStatus(r, opts.now) !== f.status) return false;
     return true;
   });
 }
@@ -165,7 +168,8 @@ function lastExposure(r, b) {
 }
 export function rawCsv(rows) {
   const cat = catalog();
-  const head = ['response_id', 'survey_version', 'status', 'end_reason', 'test', 'consent', 'link_group', 'link_group_raw', 'age_group',
+  const now = Date.now();
+  const head = ['response_id', 'survey_version', 'status', 'status_view', 'end_reason', 'test', 'consent', 'link_group', 'link_group_raw', 'age_group',
     'group_mismatch', 'cond_clicked_not_joined', 'banner_order', 'order_src', 'exposure_sec_setting', 'opened_at', 'started_at', 'finished_at',
     'server_created_at', 'server_updated_at'];
   [1, 2, 3].forEach((b) => head.push('s' + b + '_exposure_count', 's' + b + '_restarts', 's' + b + '_exposure_actual_ms', 's' + b + '_img_wait_ms'));
@@ -179,7 +183,7 @@ export function rawCsv(rows) {
   const iso = (v) => { const t = tsMs(v); return t === null ? '' : new Date(t).toISOString(); };
   const lines = rows.map((r) => {
     const a = r.ans || {};
-    const row = [r.id, r.surveyVersion, r.status, r.endReason || '', !!r.test, !!r.consent, r.linkGroup, r.linkGroupRaw || '', r.ageGroup || '',
+    const row = [r.id, r.surveyVersion, r.status, viewStatus(r, now), r.endReason || '', !!r.test, !!r.consent, r.linkGroup, r.linkGroupRaw || '', r.ageGroup || '',
       !!r.groupMismatch, !!r.cond, (r.order || []).join('-'), r.orderSrc || '', r.expSec, r.openedAt || '', r.startedAt || '', r.finishedAt || '',
       iso(r.serverCreatedAt), iso(r.serverUpdatedAt)];
     [1, 2, 3].forEach((b) => {

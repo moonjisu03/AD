@@ -4,7 +4,7 @@ import { initFirebase } from './firebase.js';
 import { buildFlow } from './questions.js';
 import {
   STATUS_LABEL, AGE_LABEL, LINK_LABEL, END_LABEL, BANNER_NAME, COLS, DEFAULT_FILTER, catalog, questionTitle, filterRows,
-  statusSummary, linkTable, aggregate, fmtPct, pct, rawCsv, summaryCsv, tsMs, sectionTimes, bannerSummary,
+  statusSummary, linkTable, aggregate, fmtPct, pct, rawCsv, summaryCsv, tsMs, sectionTimes, bannerSummary, viewStatus, SHORT_LABEL,
 } from './analysis.js';
 
 const $ = (s) => document.querySelector(s);
@@ -13,7 +13,8 @@ const BIMG = { 1: 'b01', 2: 'b04', 3: 'b15' };
 /* 계열 색: 연령대 2개는 고정 순서(20~30대 = 1번, 50~60대 = 2번). 필터가 바뀌어도 색이 바뀌지 않는다. */
 const AGE_COLOR = { '20-30': 'var(--s1)', '50-60': 'var(--s2)' };
 const AGE_COLS = COLS.filter((c) => c.key !== 'all');
-let FB, ROWS = [], LOADED_AT = null;
+let FB, ROWS = [], LOADED_AT = null, VIEW = 'dash';
+const Q = { sec: 'all', compare: true };
 const F = { ...DEFAULT_FILTER };
 
 function show(id) {
@@ -41,22 +42,26 @@ async function boot() {
     try { await authMod.signInWithEmailAndPassword(auth, $('#em').value.trim(), $('#pw').value); $('#pw').value = ''; }
     catch (err) { $('#lerr').textContent = '로그인하지 못했습니다. 이메일과 비밀번호를 확인하세요. (' + esc(err.code || 'error') + ')'; }
   });
-  $('#logout').addEventListener('click', () => { ROWS = []; LOADED_AT = null; $('#out').innerHTML = ''; $('#flow').innerHTML = ''; authMod.signOut(auth); });
+  $('#logout').addEventListener('click', () => { ROWS = []; LOADED_AT = null; ['dash', 'q', 'list'].forEach((v) => { $('#view-' + v).innerHTML = ''; }); authMod.signOut(auth); });
   $('#reload').addEventListener('click', load);
   ['test', 'status', 'version', 'link'].forEach((k) => $('#f-' + k).addEventListener('change', (e) => { F[k] = e.target.value; draw(); }));
   $('#dlraw').addEventListener('click', () => download('responses_raw', rawCsv(filterRows(ROWS, F))));
   $('#dlsum').addEventListener('click', () => download('responses_summary', summaryCsv(aggregate(filterRows(ROWS, F)), { filter: F, exportedAt: new Date().toISOString() })));
-  setupNav(); setupTip();
+  setupRouter(); setupTip();
 }
 
-/* 왼쪽 메뉴: 누르면 해당 카드로 이동, 스크롤 위치에 따라 현재 메뉴 표시 */
-function setupNav() {
-  const links = [...document.querySelectorAll('[data-nav]')];
-  window.addEventListener('scroll', () => {
-    let cur = 'sec-dash';
-    links.forEach((a) => { const el = document.getElementById(a.dataset.nav); if (el && el.getBoundingClientRect().top < 140) cur = a.dataset.nav; });
-    links.forEach((a) => a.classList.toggle('on', a.dataset.nav === cur));
-  }, { passive: true });
+/* 페이지 구분: #/dashboard · #/questions · #/responses */
+const ROUTES = { '#/dashboard': 'dash', '#/questions': 'q', '#/responses': 'list' };
+function setupRouter() {
+  const apply = () => {
+    VIEW = ROUTES[location.hash] || 'dash';
+    ['dash', 'q', 'list'].forEach((v) => { $('#view-' + v).hidden = v !== VIEW; });
+    document.querySelectorAll('[data-view]').forEach((a) => a.classList.toggle('on', a.dataset.view === VIEW));
+    window.scrollTo(0, 0);
+    draw();
+  };
+  window.addEventListener('hashchange', apply);
+  apply();
 }
 /* 차트 툴팁: data-tip 속성이 있는 도형에 마우스를 올리면 표시 */
 function setupTip() {
@@ -98,25 +103,35 @@ function download(name, text) {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
-function setStatus(v) { F.status = v; $('#f-status').value = v; draw(); document.getElementById('sec-list').scrollIntoView({ behavior: 'smooth' }); }
+function setStatus(v) { F.status = v; $('#f-status').value = v; location.hash = '#/responses'; draw(); }
 
 function draw() {
-  if (!LOADED_AT) return;
+  if (!LOADED_AT) {
+    const msg = '<div class="card empty"><p>위의 <b>응답 불러오기</b>를 눌러 주세요.</p></div>';
+    ['dash', 'q', 'list'].forEach((v) => { $('#view-' + v).innerHTML = msg; });
+    return;
+  }
   const now = Date.now();
-  const scope = filterRows(ROWS, F, { ignoreStatus: true });
-  const rows = filterRows(ROWS, F);
-  const s = statusSummary(scope, now);
-  $('#flow').innerHTML = drawFlow(s, scope);
-  $('#flow').querySelectorAll('[data-status]').forEach((b) => b.addEventListener('click', () => setStatus(b.dataset.status)));
-
+  const scope = filterRows(ROWS, F, { ignoreStatus: true, now });
+  const rows = filterRows(ROWS, F, { now });
   const stLabel = F.status === 'all' ? '전체 상태' : STATUS_LABEL[F.status];
-  let h = '<div class="grid g-2-3">' + cardTimes(rows, stLabel) + cardBanners(rows, stLabel) + '</div>';
-  h += '<div class="grid g-3-2">' + cardRecent(scope) + cardDonut(s) + '</div>';
-  if (scope.some((r) => (r.linkGroup || 'unknown') !== 'none')) h += cardLinks(scope);
-  h += '<div class="card" id="sec-q"><div class="card-h"><h2>문항별 응답</h2><span class="mut small">' + esc(stLabel) + ' ' + rows.length + '건</span></div>' + drawQuestions(rows) + '</div>';
-  h += '<div class="card" id="sec-list"><div class="card-h"><h2>응답 조회</h2><span class="mut small">' + esc(stLabel) + ' ' + rows.length + '건 · 응답 번호를 누르면 상세</span></div><div class="card-b">' + drawList(rows) + '</div></div>';
-  $('#out').innerHTML = h;
-  $('#out').querySelectorAll('[data-rid]').forEach((b) => b.addEventListener('click', () => detail(b.getAttribute('data-rid'))));
+  const el = $('#view-' + VIEW);
+  if (VIEW === 'dash') {
+    const s = statusSummary(scope, now);
+    let h = '<div class="card">' + drawFlow(s, scope) + '</div>';
+    h += '<div class="grid g-2-3">' + cardTimes(rows, stLabel) + cardBanners(rows, stLabel) + '</div>';
+    h += '<div class="grid g-3-2">' + cardRecent(scope, now) + cardDonut(s) + '</div>';
+    if (scope.some((r) => (r.linkGroup || 'unknown') !== 'none')) h += cardLinks(scope);
+    el.innerHTML = h;
+    el.querySelectorAll('[data-status]').forEach((b) => b.addEventListener('click', () => setStatus(b.dataset.status)));
+  } else if (VIEW === 'q') {
+    el.innerHTML = drawQuestions(rows, stLabel);
+    el.querySelectorAll('[data-qsec]').forEach((b) => b.addEventListener('click', () => { Q.sec = b.dataset.qsec; draw(); }));
+    const cmp = el.querySelector('#q-compare'); if (cmp) cmp.addEventListener('change', (e) => { Q.compare = e.target.checked; draw(); });
+  } else {
+    el.innerHTML = '<div class="card"><div class="card-h"><h2>응답 조회</h2><span class="mut small">' + esc(stLabel) + ' ' + rows.length + '건 · 응답 번호를 누르면 상세</span></div><div class="card-b">' + drawList(rows, now) + '</div></div>';
+  }
+  el.querySelectorAll('[data-rid]').forEach((b) => b.addEventListener('click', () => detail(b.getAttribute('data-rid'))));
 }
 
 /* ---------- 참여 흐름 카드 ---------- */
@@ -127,15 +142,15 @@ function drawFlow(s, scope) {
     : `<div class="box static"><b>${n}<small>건</small></b><span>${esc(label)}</span></div>`;
   const step = (label, boxes) => `<div class="step"><i class="dot"></i><span class="lbl">${esc(label)}</span><div class="boxes">${boxes}</div></div>`;
   const reasons = Object.keys(s.reasons).map((k) => `${END_LABEL[k] || k} ${s.reasons[k]}`).join(', ');
-  return `<div class="flow">
+  return `<div class="card-h"><h2>참여 현황</h2><span class="mut small">테스트·버전·링크 필터만 적용(진행 상태 필터와 무관)</span></div><div class="flow">
     <div class="hero"><b>${rate === null ? '–' : rate}<small>%</small></b><span>완료율</span><em>완료 ${s.complete} ÷ 시작 ${s.started}</em></div>
     <div class="steps">
       ${step('동의 후 시작', box(s.started, '시작', 'all'))}
       ${step('기본 질문 선별', box(s.screened, '선별 탈락', 'screened_out'))}
-      ${step('응답 진행', box(s.inProgress, '진행 중', 'in_progress') + box(s.stale, '이탈 추정') + box(s.quit, '중단', 'quit'))}
+      ${step('응답 진행', box(s.inProgress, '진행 중', 'in_progress') + box(s.stale, '이탈 추정', 'stale') + box(s.quit, '중단', 'quit'))}
       ${step('완료', box(s.complete20, '20~30대', '') + box(s.complete50, '50~60대', '') + box(s.complete, '전체', 'complete'))}
     </div></div>
-    <p class="flow-foot"><span>테스트·버전·링크 필터만 적용(진행 상태 필터와 무관)</span><span>이탈 추정: 진행 중인데 마지막 저장 후 2시간 넘음</span>${reasons ? '<span>선별 탈락 사유: ' + esc(reasons) + '</span>' : ''}<span>사진 반복 노출 ${s.repeated}건</span>${scope.some((r) => r.groupMismatch) ? '<span>예전 링크 그룹 ≠ 응답 연령대 ' + s.mismatch + '건</span>' : ''}</p>`;
+    <p class="flow-foot"><span>이탈 추정: 진행 중인데 마지막 저장 후 5시간 넘게 다시 접속하지 않음</span>${reasons ? '<span>선별 탈락 사유: ' + esc(reasons) + '</span>' : ''}<span>사진 반복 노출 ${s.repeated}건</span>${scope.some((r) => r.groupMismatch) ? '<span>예전 링크 그룹 ≠ 응답 연령대 ' + s.mismatch + '건</span>' : ''}</p>`;
 }
 
 /* ---------- 구간별 응답 시간(묶은 막대) ---------- */
@@ -189,10 +204,10 @@ function cardBanners(rows, stLabel) {
 
 /* ---------- 최근 응답 ---------- */
 function fmtDate(v) { const t = tsMs(v); return t === null ? '' : new Date(t).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }); }
-function statusPill(st) { return `<span class="pill${st === 'complete' ? ' ok' : st === 'screened_out' || st === 'quit' ? ' bad' : ''}">${esc(STATUS_LABEL[st] || st)}</span>`; }
-function cardRecent(scope) {
+function statusPill(st) { return `<span class="pill${st === 'complete' ? ' ok' : st === 'screened_out' || st === 'quit' || st === 'stale' ? ' bad' : ''}">${esc(STATUS_LABEL[st] || st)}</span>`; }
+function cardRecent(scope, now) {
   const recent = scope.slice().sort((a, b) => (tsMs(b.serverUpdatedAt) || 0) - (tsMs(a.serverUpdatedAt) || 0)).slice(0, 5);
-  const body = recent.length ? recent.map((r, i) => `<tr><td class="c">${i + 1}</td><td><button class="rowbtn" data-rid="${esc(r.id)}">${esc(String(r.id).slice(0, 8))}</button>${r.test ? ' <span class="pill">테스트</span>' : ''}</td><td>${statusPill(r.status)}</td><td>${esc(AGE_LABEL[r.ageGroup || ''])}</td><td>${fmtDate(r.serverUpdatedAt)}</td></tr>`).join('')
+  const body = recent.length ? recent.map((r, i) => `<tr><td class="c">${i + 1}</td><td><button class="rowbtn" data-rid="${esc(r.id)}">${esc(String(r.id).slice(0, 8))}</button>${r.test ? ' <span class="pill">테스트</span>' : ''}</td><td>${statusPill(viewStatus(r, now))}</td><td>${esc(AGE_LABEL[r.ageGroup || ''])}</td><td>${fmtDate(r.serverUpdatedAt)}</td></tr>`).join('')
     : '<tr><td colspan="5" class="mut c">응답이 없습니다</td></tr>';
   return `<div class="card"><div class="card-h"><h2>최근 응답</h2><span class="mut small">마지막 저장 순 5건</span></div>
     <div class="card-b tw"><table><thead><tr><th class="c">순서</th><th>응답</th><th>상태</th><th>응답 연령대</th><th>마지막 저장</th></tr></thead><tbody>${body}</tbody></table></div></div>`;
@@ -204,7 +219,8 @@ function cardDonut(s) {
     { label: '완료', v: s.complete, c: 'var(--s1)' },
     { label: '선별 탈락', v: s.screened, c: 'var(--s2)' },
     { label: '중단', v: s.quit, c: 'var(--s3)' },
-    { label: '진행 중·이탈 추정', v: s.inProgress + s.stale, c: 'var(--s4)' },
+    { label: '이탈 추정', v: s.stale, c: 'var(--s4)' },
+    { label: '진행 중', v: s.inProgress, c: 'var(--s5)' },
   ];
   const tot = parts.reduce((a, p) => a + p.v, 0), cx = 100, cy = 100, ro = 90, ri = 58;
   let a0 = -Math.PI / 2, g = '';
@@ -233,48 +249,79 @@ function cardLinks(scope) {
     '</tbody></table></div></div>';
 }
 
-/* ---------- 문항별 응답 ---------- */
-function drawQuestions(rows) {
+/* ---------- 문항별 응답: 한눈에 보는 카드 격자 ---------- */
+const QSECS = [
+  { key: 'all', label: '전체' }, { key: 'screen', label: '기본 질문' },
+  { key: 'b1', label: '배너 1' }, { key: 'b2', label: '배너 2' }, { key: 'b3', label: '배너 3' }, { key: 'close', label: '마무리' },
+];
+const qSecOf = (q) => (q.banner ? 'b' + q.banner : q.phase);
+function drawQuestions(rows, stLabel) {
   const agg = aggregate(rows);
-  const nCol = COLS.map((c) => rows.filter(c.test).length);
-  let h = '<p class="intro">비율 = 선택 수 ÷ 그 문항에 답한 응답 수(n). ‘답 없음’은 분기로 건너뛴 문항, 선택 문항 미응답, 도중 종료를 포함하며 분모에서 뺍니다. 복수 선택 문항은 비율 합이 100%를 넘을 수 있습니다. ‘먼저 눈에 들어왔다고 응답한 항목’은 참여자의 기억 응답이며 시선 추적 측정이 아닙니다.<br>' +
-    `열별 응답 수: ${COLS.map((c, i) => esc(c.label) + ' ' + nCol[i]).join(' · ')}</p>`;
-  let lastSec = '';
-  agg.forEach(({ q, cols }) => {
-    const sec = q.banner ? 'b' + q.banner : q.phase;
-    if (sec !== lastSec) {
-      h += q.banner ? `<div class="qsec"><img class="thumb" src="/img/${BIMG[q.banner]}.png" alt="">${esc(BANNER_NAME[q.banner])}</div>`
-        : '<div class="qsec">' + (q.phase === 'screen' ? '기본 질문' : '마무리 문항') + '</div>';
-      lastSec = sec;
+  const byId = Object.fromEntries(agg.map((x) => [x.q.id, x]));
+  const nCol = Object.fromEntries(COLS.map((c) => [c.key, rows.filter(c.test).length]));
+  const cols = Q.compare ? AGE_COLS : COLS.filter((c) => c.key === 'all');
+  let h = `<div class="card"><div class="card-h"><h2>문항별 응답</h2><span class="mut small">${esc(stLabel)} ${rows.length}건 · 20~30대 ${nCol['20-30']} · 50~60대 ${nCol['50-60']}</span>
+    <span class="sp"></span><label class="switch"><input type="checkbox" id="q-compare"${Q.compare ? ' checked' : ''}><span>연령대 나눠 보기</span></label>${Q.compare ? legend() : ''}</div>
+    <div class="qtabs" role="tablist">${QSECS.map((t) => `<button type="button" role="tab" class="qtab${Q.sec === t.key ? ' on' : ''}" data-qsec="${t.key}" aria-selected="${Q.sec === t.key}">${esc(t.label)}</button>`).join('')}</div>
+    <p class="intro">막대 비율 = 선택 수 ÷ 그 문항에 답한 수(n). 가장 많이 고른 보기는 굵게 표시합니다. 복수 선택 문항은 합계가 100%를 넘을 수 있습니다. 막대에 마우스를 올리면 수가 보입니다.</p></div>`;
+  let last = '';
+  agg.forEach(({ q }) => {
+    if (q.kind === 'scale') return; /* 확신도는 해당 문항 카드 안에 표시 */
+    const sec = qSecOf(q);
+    if (Q.sec !== 'all' && Q.sec !== sec) return;
+    if (sec !== last) {
+      if (last) h += '</div>';
+      const t = QSECS.find((x) => x.key === sec);
+      h += `<h3 class="qgroup">${q.banner ? `<img class="thumb" src="/img/${BIMG[q.banner]}.png" alt="">${esc(BANNER_NAME[q.banner])}` : esc(t ? t.label : sec)}</h3><div class="qgrid">`;
+      last = sec;
     }
-    h += `<div class="q"><h3>${esc(questionTitle(q))}</h3><p class="qt">${esc(q.text)}${q.kind === 'multi' ? ' <span class="pill">복수 선택</span>' : ''}</p>`;
-    if (q.kind === 'text') {
-      h += '<div class="tw"><table><tr><th></th>' + cols.map((c, i) => `<th class="n">${esc(COLS[i].label)}</th>`).join('') + '</tr>' +
-        '<tr><td>적은 응답</td>' + cols.map((c) => `<td class="n">${c.n}</td>`).join('') + '</tr>' +
-        '<tr><td>답 없음</td>' + cols.map((c) => `<td class="n">${c.none}</td>`).join('') + '</tr></table></div>';
-      if (cols[0].texts.length) h += `<details><summary>적은 내용 ${cols[0].texts.length}건 보기</summary><ul>${cols[0].texts.map((t) => '<li>' + esc(t) + '</li>').join('')}</ul></details>`;
-      h += '</div>'; return;
-    }
-    h += '<div class="tw"><table><tr><th>보기</th>' + cols.map((c, i) => `<th class="n" colspan="2">${esc(COLS[i].label)} (n=${c.n})</th>`).join('') + '</tr>';
-    q.opts.forEach((o) => {
-      h += `<tr><td>${esc(o.label)}</td>` + cols.map((c) => {
-        const k = c.counts[o.v] || 0, p = pct(k, c.n);
-        return `<td class="n">${k}</td><td class="n barcell"><i style="width:${p ? Math.min(100, p) : 0}%"></i><span>${fmtPct(k, c.n)}</span></td>`;
-      }).join('') + '</tr>';
-    });
-    h += '<tr><td class="mut">답 없음 (분모 제외)</td>' + cols.map((c) => `<td class="n mut">${c.none}</td><td></td>`).join('') + '</tr>';
-    if (q.kind === 'scale') h += '<tr><td class="mut">평균 확신도</td>' + cols.map((c) => `<td class="n" colspan="2">${c.mean === null ? '–' : c.mean.toFixed(2)}</td>`).join('') + '</tr>';
-    else h += '<tr><td class="mut">응답 시간 중앙값</td>' + cols.map((c) => `<td class="n mut" colspan="2">${c.medianMs === null ? '–' : (c.medianMs / 1000).toFixed(1) + '초'}</td>`).join('') + '</tr>';
-    h += '</table></div>';
-    if (q.kind === 'multi') h += '<p class="note">복수 선택 문항: 비율 합계가 100%를 넘을 수 있습니다.</p>';
-    if (cols[0].others.length) h += `<details><summary>직접 쓴 답 ${cols[0].others.length}건 보기</summary><ul>${cols[0].others.map((t) => '<li>' + esc(t) + '</li>').join('')}</ul></details>`;
-    h += '</div>';
+    h += qCard(q, byId, cols);
   });
+  if (last) h += '</div>';
   return h;
+}
+function qCard(q, byId, cols) {
+  const it = byId[q.id], c0 = it.cols;
+  const colOf = (k) => c0[COLS.findIndex((c) => c.key === k)];
+  const title = SHORT_LABEL[q.code] || q.text;
+  let h = `<article class="qc"><header><span class="qid">${esc(q.banner ? q.code : q.id)}</span><h4 title="${esc(q.text)}">${esc(title)}</h4>${q.kind === 'multi' ? '<span class="pill">복수</span>' : ''}</header>`;
+  if (SHORT_LABEL[q.code]) h += `<p class="qtext" title="${esc(q.text)}">${esc(q.text)}</p>`;
+  h += `<p class="qn">${cols.map((c) => (cols.length > 1 ? `<i style="background:${AGE_COLOR[c.key]}"></i>` : '') + esc(c.label) + ' n=' + colOf(c.key).n).join(' · ')}</p>`;
+  if (q.kind === 'text') {
+    const t = colOf('all').texts;
+    h += `<p class="qempty">${t.length ? '적은 의견 ' + t.length + '건' : '적은 의견이 없습니다'}</p>`;
+    if (t.length) h += `<details><summary>내용 보기</summary><ul>${t.map((x) => '<li>' + esc(x) + '</li>').join('')}</ul></details>`;
+    return h + '</article>';
+  }
+  /* 가장 많이 고른 보기(전체 기준) */
+  const all = colOf('all'); let top = -1, topV = null;
+  q.opts.forEach((o) => { const k = all.counts[o.v] || 0; if (k > top) { top = k; topV = o.v; } });
+  h += '<ul class="qbars">';
+  q.opts.forEach((o) => {
+    h += `<li${o.v === topV && top > 0 ? ' class="top"' : ''}><span class="ol" title="${esc(o.label)}">${esc(o.label)}</span><span class="ob">`;
+    cols.forEach((c) => {
+      const cc = colOf(c.key), k = cc.counts[o.v] || 0, p = pct(k, cc.n);
+      const tip = `${o.label}\n${c.label}: ${k}명 / ${cc.n}명 (${fmtPct(k, cc.n)})`;
+      h += `<span class="br" data-tip="${esc(tip)}"><i style="width:${p ? Math.min(100, p) : 0}%;background:${cols.length > 1 ? AGE_COLOR[c.key] : 'var(--accent)'}"></i></span><b class="bp" data-tip="${esc(tip)}">${p === null ? '–' : Math.round(p) + '%'}</b>`;
+    });
+    h += '</span></li>';
+  });
+  h += '</ul>';
+  const conf = q.banner ? byId['s' + q.banner + '_' + q.code.replace('B3', 'B4')] : null;
+  const foot = [];
+  if (conf && /^B3_/.test(q.code)) {
+    const cc = conf.cols;
+    foot.push('평균 확신도 ' + cols.map((c) => { const m = cc[COLS.findIndex((x) => x.key === c.key)].mean; return (cols.length > 1 ? c.label + ' ' : '') + (m === null ? '–' : m.toFixed(1)); }).join(' · ') + ' /5');
+  }
+  const none = cols.map((c) => colOf(c.key).none).reduce((a, b) => a + b, 0);
+  if (none) foot.push('답 없음 ' + none);
+  if (all.others.length) foot.push(`<details><summary>직접 쓴 답 ${all.others.length}건</summary><ul>${all.others.map((t) => '<li>' + esc(t) + '</li>').join('')}</ul></details>`);
+  if (foot.length) h += `<footer>${foot.map((x) => (x.startsWith('<details') ? x : '<span>' + esc(x) + '</span>')).join('')}</footer>`;
+  return h + '</article>';
 }
 
 /* ---------- 응답 목록 ---------- */
-function drawList(rows) {
+function drawList(rows, now) {
   const sorted = rows.slice().sort((a, b) => (tsMs(b.serverCreatedAt) || 0) - (tsMs(a.serverCreatedAt) || 0));
   if (!sorted.length) return '<p class="mut">조건에 맞는 응답이 없습니다.</p>';
   return '<div class="tw"><table><thead><tr><th>응답</th><th>상태</th><th>진입 링크</th><th>응답 연령대</th><th>버전</th><th>시작</th><th>종료</th><th class="n">소요</th><th>표시</th></tr></thead><tbody>' +
@@ -282,7 +329,7 @@ function drawList(rows) {
       const dur = tsMs(r.finishedAt) && tsMs(r.startedAt) ? Math.round((tsMs(r.finishedAt) - tsMs(r.startedAt)) / 60000) + '분' : '';
       const flags = [r.test ? '<span class="pill">테스트</span>' : '', r.groupMismatch ? '<span class="pill bad">연령 불일치</span>' : '',
         Object.values(r.restarts || {}).some((n) => n > 0) ? '<span class="pill bad">반복 노출</span>' : ''].join(' ');
-      return `<tr><td><button class="rowbtn" data-rid="${esc(r.id)}">${esc(String(r.id).slice(0, 8))}</button></td><td>${statusPill(r.status)}</td><td>${esc(LINK_LABEL[r.linkGroup] || r.linkGroup)}</td><td>${esc(AGE_LABEL[r.ageGroup || ''])}</td><td>${esc(r.surveyVersion)}</td><td>${fmtDate(r.serverCreatedAt)}</td><td>${fmtDate(r.finishedAt)}</td><td class="n">${dur}</td><td>${flags}</td></tr>`;
+      return `<tr><td><button class="rowbtn" data-rid="${esc(r.id)}">${esc(String(r.id).slice(0, 8))}</button></td><td>${statusPill(viewStatus(r, now))}</td><td>${esc(LINK_LABEL[r.linkGroup] || r.linkGroup)}</td><td>${esc(AGE_LABEL[r.ageGroup || ''])}</td><td>${esc(r.surveyVersion)}</td><td>${fmtDate(r.serverCreatedAt)}</td><td>${fmtDate(r.finishedAt)}</td><td class="n">${dur}</td><td>${flags}</td></tr>`;
     }).join('') + '</tbody></table></div>';
 }
 
@@ -298,7 +345,7 @@ function detail(id) {
     const one = (x) => { const o = q.opts.find((p) => p.v === x); return esc(o ? o.label : x); };
     return Array.isArray(v) ? v.map(one).join(', ') : one(v);
   };
-  let h = `<h1>응답 ${esc(String(r.id).slice(0, 8))}</h1><p class="mut small">${esc(r.id)}<br>상태: ${esc(STATUS_LABEL[r.status] || r.status)}${r.endReason ? ' (' + esc(r.endReason) + ')' : ''} · 테스트: ${r.test ? '예' : '아니오'} · 버전 ${esc(r.surveyVersion)}<br>` +
+  let h = `<h1>응답 ${esc(String(r.id).slice(0, 8))}</h1><p class="mut small">${esc(r.id)}<br>상태: ${esc(STATUS_LABEL[viewStatus(r)] || r.status)}${r.endReason ? ' (' + esc(r.endReason) + ')' : ''} · 테스트: ${r.test ? '예' : '아니오'} · 버전 ${esc(r.surveyVersion)}<br>` +
     `진입 링크: ${esc(LINK_LABEL[r.linkGroup] || r.linkGroup)}${r.linkGroupRaw && r.linkGroupRaw !== r.linkGroup ? ' (원래 값 “' + esc(r.linkGroupRaw) + '”)' : ''} · 응답 연령대: ${esc(AGE_LABEL[r.ageGroup || ''])}${r.groupMismatch ? ' · <b>링크와 불일치</b>' : ''}<br>` +
     `배너 순서: ${esc((r.order || []).join(' → '))} · 노출 설정 ${esc(r.expSec)}초</p>`;
   const ex = r.exposures || [];
